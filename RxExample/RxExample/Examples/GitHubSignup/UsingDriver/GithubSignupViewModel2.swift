@@ -25,6 +25,9 @@ This is example where view model is mutable. Some consider this to be MVVM, some
  Please note that there is no dispose bag, because no subscription is being made.
 */
 class GithubSignupViewModel2 {
+    let disposeBag = DisposeBag()
+    let store = GitHubStore.shared
+    
     // outputs {
 
     //
@@ -49,16 +52,8 @@ class GithubSignupViewModel2 {
             password: Driver<String>,
             repeatedPassword: Driver<String>,
             loginTaps: Driver<Void>
-        ),
-        dependency: (
-            API: GitHubAPI,
-            validationService: GitHubValidationService,
-            wireframe: Wireframe
         )
     ) {
-        let API = dependency.API
-        let validationService = dependency.validationService
-        let wireframe = dependency.wireframe
 
         /**
          Notice how no subscribe call is being made. 
@@ -75,45 +70,45 @@ class GithubSignupViewModel2 {
          ... are squashed into single `.asDriver(onErrorJustReturn: .Failed(message: "Error contacting server"))`
         */
 
-        validatedUsername = input.username
-            .flatMapLatest { username in
-                return validationService.validateUsername(username)
-                    .asDriver(onErrorJustReturn: .failed(message: "Error contacting server"))
-            }
-
-        validatedPassword = input.password
-            .map { password in
-                return validationService.validatePassword(password)
-            }
-
-        validatedPasswordRepeated = Driver.combineLatest(input.password, input.repeatedPassword, resultSelector: validationService.validateRepeatedPassword)
+        input.username
+            .drive(onNext: {
+                GitHubAction.shared.validateFor(username: $0)
+            })
+            .addDisposableTo(disposeBag)
+        
+        input.password
+            .drive(onNext: {
+                GitHubAction.shared.validateFor(password: $0)
+            })
+            .addDisposableTo(disposeBag)
+        
+        Driver.combineLatest(input.password, input.repeatedPassword) { $0 }
+            .drive(onNext: {
+                GitHubAction.shared.validateFor(password: $0.0, repeatedPassword: $0.1)
+            })
+            .addDisposableTo(disposeBag)
+        
+        validatedUsername = store.rx.validatedUsername
+        validatedPassword = store.rx.validatedPassword
+        validatedPasswordRepeated = store.rx.validatedPasswordRepeated
 
         let signingIn = ActivityIndicator()
         self.signingIn = signingIn.asDriver()
 
         let usernameAndPassword = Driver.combineLatest(input.username, input.password) { ($0, $1) }
-
-        signedIn = input.loginTaps.withLatestFrom(usernameAndPassword)
-            .flatMapLatest { (username, password) in
-                return API.signup(username, password: password)
-                    .trackActivity(signingIn)
-                    .asDriver(onErrorJustReturn: false)
-            }
-            .flatMapLatest { loggedIn -> Driver<Bool> in
-                let message = loggedIn ? "Mock: Signed in to GitHub." : "Mock: Sign in to GitHub failed"
-                return wireframe.promptFor(message, cancelAction: "OK", actions: [])
-                    // propagate original value
-                    .map { _ in
-                        loggedIn
-                    }
-                    .asDriver(onErrorJustReturn: false)
-            }
-
+        
+        input.loginTaps.withLatestFrom(usernameAndPassword)
+            .drive(onNext: { (username, password) in
+                GitHubAction.shared.signup(username: username, password: password, indicator: signingIn)
+            })
+            .addDisposableTo(disposeBag)
+        
+        signedIn = store.rx.signedIn
 
         signupEnabled = Driver.combineLatest(
-            validatedUsername,
-            validatedPassword,
-            validatedPasswordRepeated,
+            store.rx.validatedUsername,
+            store.rx.validatedPassword,
+            store.rx.validatedPasswordRepeated,
             signingIn
         )   { username, password, repeatPassword, signingIn in
                 username.isValid &&
