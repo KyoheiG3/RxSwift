@@ -26,20 +26,17 @@ class GitHubSignupViewController2 : ViewController {
     @IBOutlet weak var signupOutlet: UIButton!
     @IBOutlet weak var signingUpOulet: UIActivityIndicatorView!
 
+    var viewModel: GithubSignupViewModel2!
+    
     override func viewDidLoad() {
         super.viewDidLoad()
 
-        let viewModel = GithubSignupViewModel2(
+        viewModel = GithubSignupViewModel2(
             input: (
                 username: usernameOutlet.rx.text.orEmpty.asDriver(),
                 password: passwordOutlet.rx.text.orEmpty.asDriver(),
                 repeatedPassword: repeatedPasswordOutlet.rx.text.orEmpty.asDriver(),
                 loginTaps: signupOutlet.rx.tap.asDriver()
-            ),
-            dependency: (
-                API: GitHubDefaultAPI.sharedAPI,
-                validationService: GitHubDefaultValidationService.sharedValidationService,
-                wireframe: DefaultWireframe.sharedInstance
             )
         )
 
